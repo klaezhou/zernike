@@ -197,6 +197,15 @@ class Zer:
             return diff
 
         def difftheta_R(n,m,rho,theta):
+            def zernike_radial(n, m, rho):
+                #R_n^m(rho)
+                if (n - m) % 2 != 0:
+                    return np.zeros_like(rho)
+                sum = np.zeros_like(rho)
+                for k in range((n - abs(m) )// 2 + 1):
+                    #print("m=", m, "n=", n,"k=",k)
+                    sum += ((-1)**k * math.factorial(n - k) /(math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial((n - abs(m)) // 2 - k))) * rho**(n - 2 * k)
+                return sum
             diff=m*zernike_radial(n, m, rho)*np.sin(theta)
             return diff
 
