@@ -1,7 +1,7 @@
 import numpy as np
 from astropy import units as u
 from pyoof  import zernike # calling the sub-package
-
+import math
 class Zer:
     def __init__(self,order,num_points,rho,theta):
         """
@@ -21,10 +21,12 @@ class Zer:
         self.theta =theta
         self.order=order
         self.beta= np.zeros((self.num_poly,1))
+        self.alpha=None
         self.M=None
         self.Ox,self.Oy,self.Oz=6,6,8
         self.dZ_dx,self.dZ_dy=None,None
         self.C=None
+        self.Z_star=None
         
     
     def Construct_Zernike(self)->np.ndarray:
@@ -79,6 +81,7 @@ class Zer:
         else: self.Oz=Oz
         assert len(times)==Z_star, "times must have the same length as Z_star"
         # caculate the mean time 
+        self.Z_star=Z_star
         mean_times_array = np.array([np.mean(t) for t in times])
         M_i=[]
         loc=0
@@ -151,16 +154,70 @@ class Zer:
         self.C=sreg*self.C
         return self.C
     
-    def diff_trans(self,dZ_dr,dZ_dtheta):
+    def diff_trans(self,dZ_dr,dZ_dtheta)->tuple:
+        """
+        Returns
+        -------
+        tuple
+            dZ_dx,dZ_dy
+        """
         dZ_dx = dZ_dr * np.cos(self.theta) - dZ_dtheta * np.sin(self.theta) / self.rho
         dZ_dy = dZ_dr * np.sin(self.theta) + dZ_dtheta * np.cos(self.theta) / self.rho
         self.dZ_dx,self.dZ_dy=dZ_dx,dZ_dy
         return dZ_dx,dZ_dy
     
+    def initial_beta(self,beta=None):
+        if beta is not None:
+            self.beta=beta
+        return self.beta
+    
+    def initial_alpha(self,alpha=None):
+        if alpha is not None:
+            self.alpha=alpha
+        else:
+            self.alpha=np.zeros(((self.Ox+self.Oy+self.Oz+3)*self.Z_star,1))
+        return self.alpha
+    
 
-    
-    
+    def diff_zer(x,y,n,m):
+        rho = np.sqrt(x**2 + y**2)
+        theta = np.arctan2(y, x)
+
+        def diffr_R(n, m, rho):
+            sum = np.zeros_like(rho)
+            for k in range((n - abs(m)) // 2 + 1):
+                # print("m=", m, "n=", n,"k=",k)
+                sum += ((-1) ** k * math.factorial(n - k) / (
+                            math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial(
+                        (n - abs(m)) // 2 - k))) * rho ** (n - 2 * k-1)*( n - 2*k )
+            return sum
+
+        def diffx_r(x,y):
+            diff=2*x/math.sqrt(x**2+y**2)
+            return diff
+
+        def difftheta_R(n,m,rho,theta):
+            diff=m*zernike_radial(n, m, rho)*np.sin(theta)
+            return diff
+
+        def diffx_theta(x,y):
+            diff=-1*y/x**2+y**2
+            return diff
+
+        def diffy_r(x,y):
+            diff=2*y/math.sqrt(x**2+y**2)
+            return diff
+
+        def diffy_theta(x,y):
+            diff=-x/x**2+y**2
+            return diff
+
+        diffx_zer=diffr_R(n,m,rho)*diffx_r(x,y)+difftheta_R(n,m,rho,theta)*diffx_theta(x,y)
+        diffy_zer=diffr_R(n,m,rho)*diffy_r(x,y)+difftheta_R(n,m,rho,theta)*diffy_theta(x,y)
+
+        return diffx_zer,diffy_zer
         
-    
+            
+        
 
 
