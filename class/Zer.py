@@ -79,7 +79,7 @@ class Zer:
         else: self.Oy=Oy
         if Oz is None: Oz=self.Oz 
         else: self.Oz=Oz
-        assert len(times)==Z_star, "times must have the same length as Z_star"
+        
         # caculate the mean time 
         self.Z_star=Z_star
         mean_times_array = np.array([np.mean(t) for t in times])
@@ -179,7 +179,7 @@ class Zer:
         return self.alpha
     
 
-    def diff_zer(x,y,n,m):
+    def diff_zer(self,x,y,n,m):
         rho = np.sqrt(x**2 + y**2)
         theta = np.arctan2(y, x)
 
@@ -193,7 +193,10 @@ class Zer:
             return sum
 
         def diffx_r(x,y):
-            diff=2*x/math.sqrt(x**2+y**2)
+            try:
+                diff=2*x/np.sqrt(x**2+y**2)
+            except:
+                diff=0
             return diff
 
         def difftheta_R(n,m,rho,theta):
@@ -210,15 +213,25 @@ class Zer:
             return diff
 
         def diffx_theta(x,y):
-            diff=-1*y/x**2+y**2
+            try:
+                diff=-1*y/(x**2+y**2)
+            except:
+                diff=0
             return diff
 
         def diffy_r(x,y):
-            diff=2*y/math.sqrt(x**2+y**2)
+            try:
+                diff=2*y/np.sqrt(x**2+y**2)
+            except:
+                diff=0
             return diff
 
         def diffy_theta(x,y):
-            diff=-x/x**2+y**2
+            try:
+                diff=-x/(x**2+y**2)
+            except:
+                diff=0
+                
             return diff
 
         diffx_zer=diffr_R(n,m,rho)*diffx_r(x,y)+difftheta_R(n,m,rho,theta)*diffx_theta(x,y)
@@ -226,7 +239,29 @@ class Zer:
 
         return diffx_zer,diffy_zer
         
-            
-        
+    def diff(self,x,y,beta):
+        loc=0
+        order=self.order
+        dZ_dx=np.zeros(len(x))
+        dZ_dy=np.zeros(len(y))
+        for n in range(order + 1):
+            m_values = []
+            for m in range(-n, n + 1):
+                if (n - m) % 2 == 0:
+                    m_values.append(m)
+            for i in range(len(m_values)):
+                deltax,deltay =self.diff_zer(x,y,n,m_values[i])
+                print(deltax)
+                print(beta[loc])
+                deltax,deltay=beta[loc]*deltax,beta[loc]*deltay
+                
+                dZ_dx+=deltax
+                dZ_dy+=deltay
+                loc+=1
+        return   dZ_dx,dZ_dy
+    def Construct_bigmat(self)->np.array:
+        large_matrix = np.block([[self.Zernike, self.M],[np.zeros((6*(self.Z_star-1)+3,self.num_poly)), self.C]])  
+        return large_matrix
+
 
 
