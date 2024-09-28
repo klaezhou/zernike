@@ -11,6 +11,32 @@ class Zer:
         num_points: number of points (int)
         rho: radius (`~numpy.ndarray)
         theta: theta angle (`~numpy.ndarray)  given by \\theta = \\mathrm{arctan}(y / x)
+
+
+        Examples:
+        ------------
+        zer= Zer.Zer(10,2730,rho,theta)
+        zer.Construct_Zernike()
+        inverse=np.linalg.inv(np.dot(zer.Zernike.T,zer.Zernike))
+        beta = np.dot(inverse,np.dot(zer.Zernike.T,z))
+        dZ_dx,dZ_dy=zer.diff(x,y,beta)
+
+        t=[t]
+        zer= Zer.Zer(10,total_samples,rho,theta)
+        zer.Construct_Zernike()
+        C=zer.Construct_C(t,1,10000,dZ_dx,dZ_dy)
+        M=zer.Construct_M(t,1,dZ_dx,dZ_dy)
+        Wudi=zer.Construct_bigmat()
+        z_wudi=np.hstack((z,np.zeros((6*(zer.Z_star-1)+3))))
+        inverse=np.linalg.inv(np.dot(Wudi.T,Wudi))
+        beta = np.dot(inverse,np.dot(Wudi.T,z_wudi.T))
+        z_mo=np.dot(Wudi,beta)[0:total_samples]
+
+        beta=beta[0:zer.num_poly]
+        beta=zer.Regularization(beta,z)
+        z_final=np.dot(zer.Zernike,beta)
+
+        
         """
         self.num_poly=int((order+1)*(order+2)/2)
         self.Zernike =np.zeros((num_points,self.num_poly))
@@ -161,6 +187,7 @@ class Zer:
         tuple
             dZ_dx,dZ_dy
         """
+        self.rho[self.rho == 0] = 1e-15
         dZ_dx = dZ_dr * np.cos(self.theta) - dZ_dtheta * np.sin(self.theta) / self.rho
         dZ_dy = dZ_dr * np.sin(self.theta) + dZ_dtheta * np.cos(self.theta) / self.rho
         self.dZ_dx,self.dZ_dy=dZ_dx,dZ_dy
@@ -180,25 +207,29 @@ class Zer:
     
 
     def diff_zer(self,x,y,n,m):
+        """"
+        求解
+        """
         rho = np.sqrt(x**2 + y**2)
         theta = np.arctan2(y, x)
-
+        R=rho.max()
+        
         def diffr_R(n, m, rho):
-            sum = np.zeros_like(rho)
-            for k in range((n - abs(m)) // 2 + 1):
-                # print("m=", m, "n=", n,"k=",k)
-                sum += ((-1) ** k * math.factorial(n - k) / (
-                            math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial(
-                        (n - abs(m)) // 2 - k))) * rho ** (n - 2 * k-1)*( n - 2*k )
+            r=rho / R
+            r[r==0]=1e-15
+            sum = np.zeros_like(r)
+            if (n - abs(m)) / 2 + 1>1:
+                for k in range((n - abs(m)) // 2 + 1):
+                    sum += ((-1) ** k * math.factorial(n - k)* (r ** (n - 2 * k-1))*( n - 2*k )) / (
+                                    math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial(
+                                (n - abs(m)) // 2 - k))
+                    
+            if m>=0:
+                sum=sum*np.cos(m*theta)
+            else:
+                sum=sum*np.sin(m*theta)
+            sum=sum/R    
             return sum
-
-        def diffx_r(x,y):
-            try:
-                diff=2*x/np.sqrt(x**2+y**2)
-            except:
-                diff=0
-            return diff
-
         def difftheta_R(n,m,rho,theta):
             def zernike_radial(n, m, rho):
                 #R_n^m(rho)
@@ -208,38 +239,22 @@ class Zer:
                 for k in range((n - abs(m) )// 2 + 1):
                     #print("m=", m, "n=", n,"k=",k)
                     sum += ((-1)**k * math.factorial(n - k) /(math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial((n - abs(m)) // 2 - k))) * rho**(n - 2 * k)
-                return sum
-            diff=m*zernike_radial(n, m, rho)*np.sin(theta)
-            return diff
-
-        def diffx_theta(x,y):
-            try:
-                diff=-1*y/(x**2+y**2)
-            except:
-                diff=0
-            return diff
-
-        def diffy_r(x,y):
-            try:
-                diff=2*y/np.sqrt(x**2+y**2)
-            except:
-                diff=0
-            return diff
-
-        def diffy_theta(x,y):
-            try:
-                diff=-x/(x**2+y**2)
-            except:
-                diff=0
+                    
                 
+                return sum
+            diff=m*zernike_radial(n, m, rho)*np.sin(m*theta)
+            # print(diff)
             return diff
 
-        diffx_zer=diffr_R(n,m,rho)*diffx_r(x,y)+difftheta_R(n,m,rho,theta)*diffx_theta(x,y)
-        diffy_zer=diffr_R(n,m,rho)*diffy_r(x,y)+difftheta_R(n,m,rho,theta)*diffy_theta(x,y)
-
+        diffx_zer, diffy_zer=self.diff_trans(diffr_R(n,m,rho),difftheta_R(n,m,rho,theta))
         return diffx_zer,diffy_zer
         
     def diff(self,x,y,beta):
+        """
+        Returns
+        -------
+        dZ_dx, dZ_dy
+        """
         loc=0
         order=self.order
         dZ_dx=np.zeros(len(x))
@@ -251,10 +266,8 @@ class Zer:
                     m_values.append(m)
             for i in range(len(m_values)):
                 deltax,deltay =self.diff_zer(x,y,n,m_values[i])
-                print(deltax)
-                print(beta[loc])
+                # print(deltax)
                 deltax,deltay=beta[loc]*deltax,beta[loc]*deltay
-                
                 dZ_dx+=deltax
                 dZ_dy+=deltay
                 loc+=1
@@ -263,5 +276,33 @@ class Zer:
         large_matrix = np.block([[self.Zernike, self.M],[np.zeros((6*(self.Z_star-1)+3,self.num_poly)), self.C]])  
         return large_matrix
 
-
+    def Regularization(self,beta_ref,z,lambda_reg=10):
+        """
+        Final steps---------Regularization
+        """
+        Iw=np.zeros((self.num_poly,self.num_poly))
+        loc=0
+        for n in range(self.order + 1):
+            m_values = []
+            for m in range(-n, n + 1):
+                if (n - m) % 2 == 0:
+                    m_values.append(m)
+            for i in range(len(m_values)):
+                sum=0
+                if (n - abs(m_values[i])) / 2 + 1>1:
+                    for k in range((n - abs(m_values[i])) // 2 + 1):
+                        sum += ((-1) ** k * math.factorial(n - k)*( n - 2*k )) / (
+                                    math.factorial(k) * math.factorial((n + abs(m_values[i])) // 2 - k) * math.factorial(
+                                (n - abs(m_values[i])) // 2 - k))
+                Iw[loc,loc]=sum
+                loc+=1
+        Iw=np.sqrt(self.num_points*lambda_reg)*Iw
+        X=np.vstack((self.Zernike,Iw))
+        beta_ref=np.sqrt(self.num_points*lambda_reg)*beta_ref
+        print(beta_ref.shape)
+        Y=np.concatenate((z, beta_ref))
+        inverse=np.linalg.inv(np.dot(X.T,X))
+        beta = np.dot(inverse,np.dot(X.T,Y.T))
+        self.beta=beta
+        return self.beta
 
