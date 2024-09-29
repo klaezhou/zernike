@@ -15,26 +15,7 @@ class Zer:
 
         Examples:
         ------------
-        zer= Zer.Zer(10,2730,rho,theta)
-        zer.Construct_Zernike()
-        inverse=np.linalg.inv(np.dot(zer.Zernike.T,zer.Zernike))
-        beta = np.dot(inverse,np.dot(zer.Zernike.T,z))
-        dZ_dx,dZ_dy=zer.diff(x,y,beta)
-
-        t=[t]
-        zer= Zer.Zer(10,total_samples,rho,theta)
-        zer.Construct_Zernike()
-        C=zer.Construct_C(t,1,10000,dZ_dx,dZ_dy)
-        M=zer.Construct_M(t,1,dZ_dx,dZ_dy)
-        Wudi=zer.Construct_bigmat()
-        z_wudi=np.hstack((z,np.zeros((6*(zer.Z_star-1)+3))))
-        inverse=np.linalg.inv(np.dot(Wudi.T,Wudi))
-        beta = np.dot(inverse,np.dot(Wudi.T,z_wudi.T))
-        z_mo=np.dot(Wudi,beta)[0:total_samples]
-
-        beta=beta[0:zer.num_poly]
-        beta=zer.Regularization(beta,z)
-        z_final=np.dot(zer.Zernike,beta)
+        Zernike.ipynb
 
         
         """
@@ -53,6 +34,7 @@ class Zer:
         self.dZ_dx,self.dZ_dy=None,None
         self.C=None
         self.Z_star=None
+        self.times=None
         
     
     def Construct_Zernike(self)->np.ndarray:
@@ -105,7 +87,7 @@ class Zer:
         else: self.Oy=Oy
         if Oz is None: Oz=self.Oz 
         else: self.Oz=Oz
-        
+        self.times=times
         # caculate the mean time 
         self.Z_star=Z_star
         mean_times_array = np.array([np.mean(t) for t in times])
@@ -187,7 +169,7 @@ class Zer:
         tuple
             dZ_dx,dZ_dy
         """
-        self.rho[self.rho == 0] = 1e-15
+        self.rho[self.rho == 0] = 0.001
         dZ_dx = dZ_dr * np.cos(self.theta) - dZ_dtheta * np.sin(self.theta) / self.rho
         dZ_dy = dZ_dr * np.sin(self.theta) + dZ_dtheta * np.cos(self.theta) / self.rho
         self.dZ_dx,self.dZ_dy=dZ_dx,dZ_dy
@@ -216,9 +198,9 @@ class Zer:
         
         def diffr_R(n, m, rho):
             r=rho / R
-            r[r==0]=1e-15
+            r[r==0]=0.001
             sum = np.zeros_like(r)
-            if (n - abs(m)) / 2 + 1>1:
+            if (n - abs(m)) / 2 + 1>=1:
                 for k in range((n - abs(m)) // 2 + 1):
                     sum += ((-1) ** k * math.factorial(n - k)* (r ** (n - 2 * k-1))*( n - 2*k )) / (
                                     math.factorial(k) * math.factorial((n + abs(m)) // 2 - k) * math.factorial(
@@ -228,7 +210,9 @@ class Zer:
                 sum=sum*np.cos(m*theta)
             else:
                 sum=sum*np.sin(m*theta)
-            sum=sum/R    
+            sum=sum/R   
+            # print('s',sum.shape) 
+            # print(sum.max())
             return sum
         def difftheta_R(n,m,rho,theta):
             def zernike_radial(n, m, rho):
@@ -276,7 +260,7 @@ class Zer:
         large_matrix = np.block([[self.Zernike, self.M],[np.zeros((6*(self.Z_star-1)+3,self.num_poly)), self.C]])  
         return large_matrix
 
-    def Regularization(self,beta_ref,z,lambda_reg=10):
+    def Regularization(self,beta_ref,z,lambda_reg=10000):
         """
         Final steps---------Regularization
         """
@@ -299,10 +283,91 @@ class Zer:
         Iw=np.sqrt(self.num_points*lambda_reg)*Iw
         X=np.vstack((self.Zernike,Iw))
         beta_ref=np.sqrt(self.num_points*lambda_reg)*beta_ref
-        print(beta_ref.shape)
+        
         Y=np.concatenate((z, beta_ref))
         inverse=np.linalg.inv(np.dot(X.T,X))
         beta = np.dot(inverse,np.dot(X.T,Y.T))
         self.beta=beta
         return self.beta
+    
+    def Motion(self,alpha,x,y,z):
+        times=self.times
+        self.alpha=alpha
+        def diagonal_stack(*matrices):
+            
+            total_rows = sum(mat.shape[0] for mat in matrices)
+            total_cols = sum(mat.shape[1] for mat in matrices)
+            result = np.zeros((total_rows, total_cols))
+            current_row = 0
+            current_col = 0
+            for mat in matrices:
+                result[current_row:current_row + mat.shape[0], current_col:current_col + mat.shape[1]] = mat
+                current_row += mat.shape[0]
+                current_col += mat.shape[1]
+            
+            return result
+        # caculate the mean time 
+        Z_star=self.Z_star
+        mean_times_array = np.array([np.mean(t) for t in times])
+        M_ix=[]
+        M_iy=[]
+        M_iz=[]
+        
+        Ox,Oy,Oz=self.Ox,self.Oy,self.Oz
+        for i in range(Z_star):
+            Ni=len(times[i])
+            mx=np.zeros((Ni,Ox+1))
+            my=np.zeros((Ni,Oy+1))
+            mz=np.zeros((Ni,Oz+1))
+            for m in range(Ox+1):
+               mx[:,m]=(times[i]-mean_times_array[i])**m 
+            for m in range(Oy+1):   
+               my[:,m]=(times[i]-mean_times_array[i])**m 
+            for m in range(Oz+1):     
+               mz[:,m]=(times[i]-mean_times_array[i])**m 
+            
+            M_ix.append(mx)
+            M_iy.append(my)
+            M_iz.append(mz)
+                
+        Mx=diagonal_stack(*M_ix)
+        My=diagonal_stack(*M_iy)
+        Mz=diagonal_stack(*M_iz)
+        alphax=np.zeros(Z_star*(Ox+1))
+        alphay=np.zeros(Z_star*(Oy+1))
+        alphaz=np.zeros(Z_star*(Oz+1))
+        loc=0
+        locx=0
+        locy=0
+        locz=0
+        for i in range(Z_star):
+            alphax[locx:locx+Ox+1]=alpha[loc:loc+Ox+1]
+            
+            loc+=Ox+1
+            locx+=Ox+1
+            alphay[locy:locy+Oy+1]=alpha[loc:loc+Oy+1]
+            loc+=Oy+1
+            locy+=Oy+1
+            alphaz[locz:locz+Oz+1]=alpha[loc:loc+Oz+1]
+            locz+=Oz+1
+        x=x-np.dot(Mx,alphax)
+        print(alphax.shape)
+        print(np.dot(Mx,alphax).max())
+        # print(np.linalg.norm(np.dot(Mx,alphax)))
+        print(np.linalg.norm(np.dot(My,alphay)))
+        print(np.linalg.norm(np.dot(Mz,alphaz)))
+        y=y-np.dot(My,alphay)
+        z=z-np.dot(Mz,alphaz)
+        return  x,y,z
+    
+    def info(self):
+        print("This is a class for Zernike Polynomials")
+        
+        print(f"Order: {self.order}")
+        print(f"Number of Polynomials: {self.num_poly}")
+        print(f"Number of Points: {self.num_points}")
+        
+        print(f"Ox: {self.Ox}, Oy: {self.Oy}, Oz: {self.Oz}")
+        print(f"Z_star: {self.Z_star}")
+        
 
