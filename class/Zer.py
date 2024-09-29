@@ -351,8 +351,8 @@ class Zer:
             alphaz[locz:locz+Oz+1]=alpha[loc:loc+Oz+1]
             locz+=Oz+1
         x=x-np.dot(Mx,alphax)
-        print(alphax.shape)
         print(np.dot(Mx,alphax).max())
+        print(np.dot(My,alphay).max())
         # print(np.linalg.norm(np.dot(Mx,alphax)))
         print(np.linalg.norm(np.dot(My,alphay)))
         print(np.linalg.norm(np.dot(Mz,alphaz)))
