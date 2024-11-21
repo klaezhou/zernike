@@ -260,7 +260,7 @@ class Zer:
         large_matrix = np.block([[self.Zernike, self.M],[np.zeros((6*(self.Z_star-1)+3,self.num_poly)), self.C]])  
         return large_matrix
 
-    def Regularization(self,beta_ref,z,lambda_reg=10000):
+    def Regularization(self,beta_ref,z,lambda_reg=1e-15):
         """
         Final steps---------Regularization
         """
